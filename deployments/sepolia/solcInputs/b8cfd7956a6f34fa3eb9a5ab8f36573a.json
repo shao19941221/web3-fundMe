@@ -1,0 +1,42 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(\n    uint80 _roundId\n  ) external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n\n  function latestRoundData()\n    external\n    view\n    returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n}\n"
+    },
+    "contracts/FundMe.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\n\nimport \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\nimport \"contracts/PriceConverter.sol\";\n\nerror NotOwner();\n\ncontract FundMe {\n    using PriceConverter for uint256;\n\n    uint256 public constant minMoney = 50 * 1e18;\n    address[] public funders;\n    mapping(address => uint256) public addressToAmount;\n    address public immutable owner;\n\n    AggregatorV3Interface public priceFeed;\n\n    constructor(address priceFeedAddress) {\n        owner = msg.sender;\n        priceFeed = AggregatorV3Interface(priceFeedAddress);\n    }\n\n    //0x694AA1769357215DE4FAC081bf1f309aDC325306\n    //fund - 资金 funder - 提供资金者\n    function fund() public payable {\n        //人们可以通过这个函数来发送资金\n        //msg.value有18位是在小数之后, 因为一个ETH是10^18个wei\n        //require(msg.value.getConversionRate() >= minMoney, \"Didn't send enough\");\n        if (msg.value.getConversionRate(priceFeed) < minMoney) {\n            revert NotOwner();\n        }\n        funders.push(msg.sender);\n        addressToAmount[msg.sender] = msg.value;\n    }\n\n    receive() external payable {\n        fund();\n    }\n\n    fallback() external payable {\n        fund();\n    }\n\n    function withdraw() public onlyOwner {\n        //合约的拥有者可以提取不同的funder发送的资金\n\n        for (uint256 i = 0; i < funders.length; i++) {\n            address funder = funders[i];\n            addressToAmount[funder] = 0;\n        }\n\n        funders = new address[](0);\n        (bool callSuccess, ) = payable(msg.sender).call{\n            value: address(this).balance\n        }(\"\");\n        require(callSuccess, \"error\");\n    }\n\n    modifier onlyOwner() {\n        //require(owner == msg.sender, \"not owner\");\n        if (owner != msg.sender) {\n            revert NotOwner();\n        }\n        _;\n    }\n}\n"
+    },
+    "contracts/PriceConverter.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.24;\nimport \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\n\nlibrary PriceConverter {\n\nfunction getPrice(AggregatorV3Interface priceFeed) internal view returns(uint256){\n//ABI\n//address 0x694AA1769357215DE4FAC081bf1f309aDC325306\n//AggregatorV3Interface agg = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);\n(, int256 price, , , ) = priceFeed.latestRoundData();\n//ETH相对于USD的价格\n//3000个USD : 1ETH\n//pricefeed返回的值有8个0在小数点之后, 3000.00000000, 喂价是8位小数, msg.value是18位小数, 为了统一单位, 喂价需要*1e10\nreturn uint256(price * 1e10);//这里*1e10是统一转换为wei单位, 因为喂价后面就跟8个0所以就乘10 加起来是18个0; msg.value本身就是wei单位\n}\n\nfunction getConversionRate(uint256 _ethAmount, AggregatorV3Interface priceFeed) internal view returns(uint256) {\nuint256 price = getPrice(priceFeed);\nreturn (_ethAmount * price) / 1e18;\n}\n\nfunction getVerson() internal view returns(uint256){\nAggregatorV3Interface agg = AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);\nreturn agg.version();\n}\n\n\n}"
+    }
+  },
+  "settings": {
+    "evmVersion": "paris",
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
